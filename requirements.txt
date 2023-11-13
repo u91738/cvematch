@@ -1,0 +1,3 @@
+gensim==4.3.2
+numpy==1.24.2
+unidiff==0.7.5
