@@ -1,7 +1,6 @@
 #!/usr/bin/python3
 
 import sys
-import os
 from pathlib import Path
 import multiprocessing
 from gensim.models.keyedvectors import KeyedVectors
@@ -79,24 +78,25 @@ ap.add_argument('files', nargs='*', help='Source files to check')
 
 arg = ap.parse_args()
 
-datadir = Path(__file__).parent / fname
+datadir = Path(__file__).parent / 'data'
 if arg.db is None:
     arg.db = str(datadir / 'CVEfixes_v1.0.7.sqlite')
 
 if arg.w2v_list:
     print('Available word2vec models w2v-(training algorithm)-v(vector-size)-w(window size):')
-    for i in os.listdir(datadir):
+
+    for i in datadir.iterdir():
         if i.startswith('w2v-') and not i.endswith('.npy'):
             print(i)
     print()
 
 w2v_fname = datadir / arg.w2v
-if not os.path.isfile(w2v_fname):
+if not w2v_fname.is_file():
     print('word2vec model', w2v_fname, 'not found', file=sys.stderr)
     print('Train it with something like ./w2v.py --vector-size 128 --window-size 5', file=sys.stderr)
     exit(-1)
 
-w2v = KeyedVectors.load(w2v_fname)
+w2v = KeyedVectors.load(str(w2v_fname))
 
 if arg.w2v_show:
     w2v_show(w2v)
