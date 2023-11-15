@@ -1,15 +1,14 @@
 # cvematch
-Very fuzzy search for code similar to code that caused known vulnerabilities.
-This tool is not precise, its reports should be interpreted as "structure of this code loosely reminds the code that lead to CVE-123".
-How loosely, depends on --max-score argument.
+Fuzzy search for code similar to code that caused known vulnerabilities.
+Reports should be interpreted as "structure of this code loosely reminds the code that lead to CVE-123".
+Its purpose is to suggest candidates for manual code audit, somewhat like you would use a noisy static analyzer, not an SCA tool.
 C and C++ only, at least for now.
 
 This thing is slow. Expect a minute per CVE on mid-size project. Dataset has thousands of CVEs.
 
 ## Usage
 
-TODO: data preparation
-TODO: dependencies
+To prepare the dataset, change to the cvematch directory and run `./setup.sh` then `./cleanup.sh`.
 
 ```
 $ ./cvematch.py --help
@@ -47,9 +46,9 @@ options:
 Uses [CVEFixes](https://zenodo.org/records/7029359) dataset as a source of diffs for public vulnerabilities.
 
 Each source file is scored as follows:
-- Search source for a substrings with minimal Levenstein distance* to each hunk in diff for a CVE fix.
+- Search source for a substring with minimal Levenstein distance* to each hunk in diff for a CVE fix.
 - If distance for diff part before change is less than certain threshold, compute (1) for CVE's diff code after fix.
-- If distance for code before fix is less than distance after fix, report the issue.
+- If distance to code before fix is less than distance after fix, report the issue.
 
 *Levenstein distance here is not the usual string matching case.
 The insert-delete-substitute operations are done on whole words / tokens.
