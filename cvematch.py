@@ -2,32 +2,26 @@
 
 import sys
 from pathlib import Path
-import multiprocessing
 from gensim.models.keyedvectors import KeyedVectors
 import cvm
 import argparse
-import cProfile
-import traceback
-import more_itertools as mit
-from collections import defaultdict
-import numpy as np
 
 def db_diff_to_git_diff(diff_str):
     return f'diff --git a/a.cpp b/a.cpp\nindex 0000..0000 000000\n' + diff_str
 
-def get_cves(db, conf):
+def get_cves(db):
     res = []
     for file_change_id, diff_str in db.get_cves():
         diff = db_diff_to_git_diff(diff_str)
-        if cve := cvm.CVEDesc.from_patch(conf, file_change_id, diff):
+        if cve := cvm.CVEDesc.from_patch(file_change_id, diff):
             res.append(cve)
     return res
 
-def get_cve(db, conf, cve_id):
+def get_cve(db, cve_id):
     res = []
     for file_change_id, diff_str in db.get_cve(cve_id):
         diff = db_diff_to_git_diff(diff_str)
-        if cve := cvm.CVEDesc.from_patch(conf, file_change_id, diff):
+        if cve := cvm.CVEDesc.from_patch(file_change_id, diff):
             res.append(cve)
     return res
 
@@ -135,69 +129,32 @@ with cvm.Database(arg.db) as db:
     if cve_ids:
         print('Will check:')
         print('\n'.join(cve_ids))
-        cves = [cve for cve_id in cve_ids for cve in get_cve(db, conf, cve_id)]
+        cves = [cve for cve_id in cve_ids for cve in get_cve(db, cve_id)]
     else:
         print('No CVEs to check. Will use all C/C++ CVE records')
-        cves = get_cves(db, conf)
+        cves = get_cves(db)
 
-    needles_before_map = defaultdict(lambda: [])
-    needles_before = []
-    for cve in cves:
-        for hunk in cve.before:
-            needles_before_map[cve].append(len(needles_before))
-            needles_before.append(hunk.tokens)
-
-    needles_after_map = defaultdict(lambda: [])
-    needles_after = []
-    for cve in cves:
-        for hunk in cve.after:
-            needles_after_map[cve].append(len(needles_after))
-            needles_after.append(hunk.tokens)
-
-    files = []
-    for fname in arg.files:
-        with open(fname, 'r') as f:
-            files.append((fname, cvm.tokenize(f.read())))
-    haystack_max = max(len(i[1]) for i in files)
-    print(len(arg.files), 'files, max tokens in file: ', haystack_max)
-
-    with (cvm.LevensteinSearchCL(conf.w2v,
-                                 haystack_max,
-                                 conf.levenstein_ins_cost,
-                                 conf.levenstein_del_cost,
-                                 max(conf.levenstein_ins_cost, conf.levenstein_del_cost)
-          ) as lev,
-          lev.prepare_needles(needles_before) as needles_b,
-          lev.prepare_needles(needles_after) as needles_a,
-          lev.prepare_haystack() as haystack
-    ):
-        print('OpenCL search running on ', ', '.join(i.name for i in lev.ctx.devices))
-        for fname, tokens in files:
-            print('Processing', fname, 'tokens:', len(tokens))
-            haystack.assign(tokens)
-
-            dist_b, ind = lev.search(needles_b, haystack)
-            dist_a, _ = lev.search(needles_a, haystack)
-            for cve in cves:
-                hunk_inds = needles_before_map[cve]
-                score_b = np.mean(dist_b[hunk_inds])
-                score_a = np.mean(dist_a[needles_after_map[cve]])
-                if score_b < conf.max_score and score_b < score_a:
-                    r = db.cve_report(cve.change_id)
-                    cve_rep = db.cve_report(cve.change_id)
-                    print('Matched', cve_rep.cve_id, 'with score', score_b, '-', score_a)
-                    if arg.report_cve_info:
-                        print('CVE Info:', cve_rep.description)
-                    if arg.report_cwe:
-                        for cwe in cve_rep.cwe:
-                            print(cwe.cwe_id, '-', cwe.cwe_name)
-                    if arg.report_diff_full:
-                        print('diff:')
-                        print(cve_rep.diff)
-                    with open(fname, 'r') as f:
-                        tokens = cvm.tokenize(f.read(), get_line=True)
-                        for hunk_ind, i in enumerate(ind[hunk_inds]):
-                            print(f'{fname}:{tokens[i]}:0')
-                            if arg.report_diff:
-                                print(cve.before[hunk_ind].src)
-                    print('')
+    with cvm.Matcher(arg.files, cves, conf) as m:
+        print(len(arg.files), 'files, max tokens in file: ', m.haystack_max)
+        print('OpenCL search running on ', ', '.join(i.name for i in m.lev.ctx.devices))
+        for fname, ftokens in m.files:
+            print('Processing', fname, 'tokens:', len(ftokens))
+            for score_b, score_a, matches, cve in m.match(ftokens):
+                r = db.cve_report(cve.change_id)
+                cve_rep = db.cve_report(cve.change_id)
+                print('Matched', cve_rep.cve_id, 'with score', score_b, '-', score_a)
+                if arg.report_cve_info:
+                    print('CVE Info:', cve_rep.description)
+                if arg.report_cwe:
+                    for cwe in cve_rep.cwe:
+                        print(cwe.cwe_id, '-', cwe.cwe_name)
+                if arg.report_diff_full:
+                    print('diff:')
+                    print(cve_rep.diff)
+                with open(fname, 'r') as f:
+                    tokens = cvm.tokenize(f.read(), get_line=True)
+                    for match in matches:
+                        print(f'{fname}:{tokens[match.start_token_ind]}:0   ', '%0.6f' % match.dist_b)
+                        if arg.report_diff:
+                            print(match.hunk.src)
+                print('')
