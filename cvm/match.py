@@ -63,11 +63,13 @@ class CVEDesc:
         else:
             return None
 
+
 @dataclass
 class HunkMatch:
     start_token_ind: int
     hunk: CVEHunk
     dist_b: float
+
 
 class Matcher:
     def __init__(self, files, cves, conf):
@@ -78,13 +80,6 @@ class Matcher:
             for hunk in cve.before:
                 self.needles_before_map[cve].append(len(self.needles_before))
                 self.needles_before.append(hunk.tokens)
-
-        self.needles_after_map = defaultdict(lambda: [])
-        self.needles_after = []
-        for cve in cves:
-            for hunk in cve.after:
-                self.needles_after_map[cve].append(len(self.needles_after))
-                self.needles_after.append(hunk.tokens)
 
         self.files = []
         for fname in files:
@@ -98,31 +93,50 @@ class Matcher:
                                       conf.levenstein_del_cost,
                                       1)
         self.needles_b = self.lev.prepare_needles(self.needles_before)
-        self.needles_a = self.lev.prepare_needles(self.needles_after)
+
         self.haystack = self.lev.prepare_haystack()
 
     def __enter__(self):
         self.needles_b.__enter__()
-        self.needles_a.__enter__()
         self.lev.__enter__()
         self.haystack.__enter__()
         return self
 
     def __exit__(self, t, v, bt):
         self.needles_b.__exit__(t, v, bt)
-        self.needles_a.__exit__(t, v, bt)
         self.lev.__exit__(t, v, bt)
         self.haystack.__exit__(t, v, bt)
 
     def match(self, haystack_tokens):
         self.haystack.assign(haystack_tokens)
 
+        # match with CVEs before fix
         dist_b, ind = self.lev.search(self.needles_b, self.haystack)
-        dist_a, _ = self.lev.search(self.needles_a, self.haystack)
 
+        # gather cve's that scored below limit
+        scores_b = dict()
         for cve, hunk_inds in self.needles_before_map.items():
             score_b = np.mean(dist_b[hunk_inds])
-            score_a = np.mean(dist_a[self.needles_after_map[cve]])
-            if score_b < self.conf.max_score and score_b < score_a:
+            if score_b < self.conf.max_score:
+                scores_b[cve] = score_b
+
+        # prepare CVEs after fix for CVEs that scored low enough
+        needles_after_map = defaultdict(lambda: [])
+        needles_after = []
+        for cve in scores_b.keys():
+            for hunk in cve.after:
+                needles_after_map[cve].append(len(needles_after))
+                needles_after.append(hunk.tokens)
+
+        # match with CVEs after fix
+        with self.lev.prepare_needles(needles_after) as needles_a:
+            dist_a, _ = self.lev.search(needles_a, self.haystack)
+
+        res = []
+        for cve, score_b in scores_b.items():
+            score_a = np.mean(dist_a[needles_after_map[cve]])
+            # if file is more similar to state before fix than after fix - gather results
+            if score_b < score_a:
                 matches = [HunkMatch(i, hunk, db) for i, hunk, db in zip(ind[hunk_inds], cve.before, dist_b[hunk_inds])]
-                yield score_b, score_a, matches, cve
+                res.append((score_b, score_a, matches, cve))
+        return res
