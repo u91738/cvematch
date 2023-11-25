@@ -126,8 +126,7 @@ class Haystack:
 
 
 class LevensteinSearchCL:
-    # TODO: generate config
-    def __init__(self, w2v:KeyedVectors, del_cost:int, ins_cost:int, default_dist:int):
+    def __init__(self, w2v:KeyedVectors, haystack_max:int, del_cost:int, ins_cost:int, default_dist:int):
         self.w2v = w2v
 
         self.ctx = cl.create_some_context(interactive=False)
@@ -141,8 +140,15 @@ class LevensteinSearchCL:
         self.dist = OCLOutput(self.ctx, self.queue, np.float32)
         self.ind = OCLOutput(self.ctx, self.queue, np.uint32)
 
-        with open(Path(__file__).parent / 'levenstein.cl') as src_file:
-            self.program = cl.Program(self.ctx, src_file.read()).build()
+        with open(Path(__file__).parent / 'levenstein.cl', 'r') as src_file:
+            self.program = cl.Program(self.ctx, src_file.read())\
+                             .build(options=[
+                                '-D', f'DEL_COST={del_cost}',
+                                '-D', f'INS_COST={ins_cost}',
+                                '-D', f'DEFAULT_DISTANCE={default_dist}',
+                                '-D', f'HAYSTACK_MAX={haystack_max + 1}',
+                                '-D', f'VECTOR_SIZE={w2v.vector_size}',
+                             ])
 
     def prepare_needles(self, needles):
         return Needles(self.ctx, self.queue, self.w2v, needles)

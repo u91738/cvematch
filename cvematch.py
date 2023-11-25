@@ -74,8 +74,8 @@ ap.add_argument('--report-diff-full', action='store_true', help='on match, show 
 ap.add_argument('--debug-profile', action='store_true', help='profile the main analysis code')
 ap.add_argument('--max-score', default=0.2, type=float,
                 help='Max score value that is considered low enough to show as a result. Reasonable values are from 0.05 (~exact copy of CVE) to 0.3 (loosely reminds of some CVE)')
-ap.add_argument('--levenstein-ins-cost', default=1, type=float, help='insertion cost in levenstein distance computation')
-ap.add_argument('--levenstein-del-cost', default=1, type=float, help='deletion cost in levenstein distance computation')
+ap.add_argument('--levenstein-ins-cost', default=2, type=float, help='insertion cost in levenstein distance computation')
+ap.add_argument('--levenstein-del-cost', default=2, type=float, help='deletion cost in levenstein distance computation')
 ap.add_argument('files', nargs='*', help='Source files to check')
 
 
@@ -139,8 +139,6 @@ with cvm.Database(arg.db) as db:
     else:
         print('No CVEs to check. Will use all C/C++ CVE records')
         cves = get_cves(db, conf)
-    print('In', len(arg.files), 'files')
-
 
     needles_before_map = defaultdict(lambda: [])
     needles_before = []
@@ -156,7 +154,15 @@ with cvm.Database(arg.db) as db:
             needles_after_map[cve].append(len(needles_after))
             needles_after.append(hunk.tokens)
 
+    files = []
+    for fname in arg.files:
+        with open(fname, 'r') as f:
+            files.append((fname, cvm.tokenize(f.read())))
+    haystack_max = max(len(i[1]) for i in files)
+    print(len(arg.files), 'files, max tokens in file: ', haystack_max)
+
     with (cvm.LevensteinSearchCL(conf.w2v,
+                                 haystack_max,
                                  conf.levenstein_ins_cost,
                                  conf.levenstein_del_cost,
                                  max(conf.levenstein_ins_cost, conf.levenstein_del_cost)
@@ -166,9 +172,7 @@ with cvm.Database(arg.db) as db:
           lev.prepare_haystack() as haystack
     ):
         print('OpenCL search running on ', ', '.join(i.name for i in lev.ctx.devices))
-        for fname in arg.files:
-            with open(fname, 'r') as f:
-                tokens = cvm.tokenize(f.read())
+        for fname, tokens in files:
             print('Processing', fname, 'tokens:', len(tokens))
             haystack.assign(tokens)
 

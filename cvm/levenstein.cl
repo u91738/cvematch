@@ -1,9 +1,26 @@
-#define DEL_COST 1
-#define INS_COST 1
+#ifndef DEL_COST
+#define DEL_COST 2
+#endif
+
+#ifndef INS_COST
+#define INS_COST 2
+#endif
+
+#ifndef DEFAULT_DISTANCE
 #define DEFAULT_DISTANCE 1
+#endif
+
+#ifndef HAYSTACK_MAX
 #define HAYSTACK_MAX 32768
+#endif
+
+#ifndef VECTOR_SIZE
 #define VECTOR_SIZE 128
+#endif
+
+#ifndef CACHE_SIZE
 #define CACHE_SIZE 10000
+#endif
 
 
 static inline float cosine_similarity(__constant const float *a, __constant const float *b) {
