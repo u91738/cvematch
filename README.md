@@ -4,7 +4,7 @@ Reports should be interpreted as "structure of this code loosely reminds the cod
 Its purpose is to suggest candidates for manual code audit, somewhat like you would use a noisy static analyzer, not an SCA tool.
 C and C++ only, at least for now.
 
-This thing is slow. Expect a minute per CVE on mid-size project. Dataset has thousands of CVEs.
+Uses OpenCL for computation-intensive parts, you may want a machine with GPU.
 
 ## Usage
 

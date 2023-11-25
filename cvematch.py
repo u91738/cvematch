@@ -65,7 +65,6 @@ ap.add_argument('--report-cve-info', action='store_true', help='show CVE descrip
 ap.add_argument('--report-cwe', action='store_true', help='show CWE id and description for matches')
 ap.add_argument('--report-diff', action='store_true', help='on match, show diff for matching hunk in CVE fix')
 ap.add_argument('--report-diff-full', action='store_true', help='on match, show full diff of CVE fix')
-ap.add_argument('--debug-profile', action='store_true', help='profile the main analysis code')
 ap.add_argument('--max-score', default=0.2, type=float,
                 help='Max score value that is considered low enough to show as a result. Reasonable values are from 0.05 (~exact copy of CVE) to 0.3 (loosely reminds of some CVE)')
 ap.add_argument('--levenstein-ins-cost', default=2, type=float, help='insertion cost in levenstein distance computation')
@@ -142,7 +141,7 @@ with cvm.Database(arg.db) as db:
             for score_b, score_a, matches, cve in m.match(ftokens):
                 r = db.cve_report(cve.change_id)
                 cve_rep = db.cve_report(cve.change_id)
-                print('Matched', cve_rep.cve_id, 'with score', score_b, '-', score_a)
+                print('Matched', cve_rep.cve_id, 'with score', '%0.6f' % score_b, '-', '%0.6f' % score_a)
                 if arg.report_cve_info:
                     print('CVE Info:', cve_rep.description)
                 if arg.report_cwe:
