@@ -1,50 +1,179 @@
+#!/usr/bin/python3
+
+import sys
 from gensim.models.keyedvectors import KeyedVectors
+import pyopencl as cl
 import numpy as np
+from typing import Optional, List, Union
+from pathlib import Path
 
-class LevensteinSearch:
-    '''Search for a position in haystack with minimal Levenstein distance to needle
-       Levenstein distance is computed using words/tokens where common definition of Levenstein distance would use a char.
-       Substitution cost is word2vec distance between tokens, not 1.'''
 
-    def __init__(self, w2v:KeyedVectors, max_distance, insertion_cost=1, deletion_cost=1, default_distance=1):
-        self.max_distance = max_distance
-        self.insertion_cost = insertion_cost
-        self.deletion_cost = deletion_cost
-        self.default_distance = default_distance
-        self.w2v = w2v
-        self.__dist_cache = dict()
+class OCLInput:
+    def __init__(self, ctx:cl.Context, queue:cl.CommandQueue, value:Optional[np.ndarray]=None):
+        self.ctx = ctx
+        self.queue = queue
+        self.buf = None
+        self.used_size = None
+        if value is not None:
+            self.assign(value)
 
-    def item_distance(self, a, b):
-        if a == b:
-            return 0
-        key = a,b
-        if (r := self.__dist_cache.get(key)) is None:
-            try:
-                r = self.w2v.distance(a,b)
-            except KeyError:
-                r = self.default_distance
-            self.__dist_cache[key] = r # cache size is not limited, beware of OOM
+    def __alloc(self, value:np.ndarray, size:int):
+        if self.buf is not None:
+            self.buf.release()
+        flags = cl.mem_flags.HOST_WRITE_ONLY | cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR
+        self.buf = cl.Buffer(self.ctx, flags, size, value)
+
+    def assign(self, value:np.ndarray):
+        assert isinstance(value, np.ndarray)
+        size = value.itemsize * np.prod(value.shape)
+        if self.buf is None or self.buf.size <= size:
+            self.__alloc(value, size)
+        else:
+            cl.enqueue_copy(self.queue, self.buf, value)
+        self.used_size = size
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, t, v, bt):
+        if self.buf is not None:
+            self.buf.release()
+
+
+class OCLOutput:
+    def __init__(self, ctx:cl.Context, queue:cl.CommandQueue, dtype, count:Optional[int]=None):
+        self.buf = None
+        self.used_count = None
+        self.itemsize = dtype().itemsize
+        self.dtype = dtype
+        self.ctx = ctx
+        self.queue = queue
+        if count is not None:
+            self.resize(count)
+
+    def __alloc(self, count:int):
+        if self.buf is not None:
+            self.buf.release()
+        flags = cl.mem_flags.HOST_READ_ONLY | cl.mem_flags.WRITE_ONLY
+        self.buf = cl.Buffer(self.ctx, flags, size=count * self.itemsize)
+        self.used_count = count
+
+    def resize(self, count):
+        if self.buf is None or self.buf.size < count * self.itemsize:
+            self.__alloc(count)
+        else:
+            self.used_count = count
+
+    def get(self):
+        r = np.empty((self.used_count,), dtype=self.dtype)
+        cl.enqueue_copy(self.queue, r, self.buf)
         return r
 
-    def distance(self, needle, haystack):
-        m = len(needle)
-        n = len(haystack)
-        if n < m:
-            return self.max_distance, len(needle)
+    def __enter__(self):
+        return self
 
-        v0 = np.zeros(n + 1)
-        v1 = np.zeros(n + 1)
+    def __exit__(self, t, v, bt):
+        if self.buf is not None:
+            self.buf.release()
 
-        for i in range(m):
-            v1[0] = i + 1
 
-            for j in range(n):
-                del_cost = v0[j + 1] + self.deletion_cost
-                ins_cost = v1[j] + self.insertion_cost
-                sub_cost = v0[j] + self.item_distance(needle[i], haystack[j])
-                v1[j + 1] = min(del_cost, ins_cost, sub_cost)
-            v0, v1 = v1, v0
+def w2v_get_index(w2v, token):
+    r = w2v.key_to_index.get(token)
+    return -1 if r is None else r
 
-        ind = np.argmin(v0)
-        dist = v0[ind]
-        return dist, ind
+
+class Needles:
+    def __init__(self, ctx:cl.Context, queue:cl.CommandQueue, w2v:KeyedVectors, needles:List[List[str]]):
+        tmp_needles = []
+        tmp_needle_offsets = []
+        for needle in needles:
+            tmp_needle_offsets.append(len(tmp_needles))
+            tmp_needles.append(len(needle))
+            for i in needle:
+                tmp_needles.append(w2v_get_index(w2v, i))
+        self.count = len(needles)
+        self.needles = OCLInput(ctx, queue, np.array(tmp_needles, np.int32))
+        self.offsets = OCLInput(ctx, queue, np.array(tmp_needle_offsets, np.int32))
+
+    def __enter__(self):
+        self.needles.__enter__()
+        self.offsets.__enter__()
+        return self
+
+    def __exit__(self, t, v, bt):
+        self.needles.__exit__(t, v, bt)
+        self.offsets.__exit__(t, v, bt)
+
+
+class Haystack:
+    def __init__(self, ctx:cl.Context, queue:cl.CommandQueue, w2v:KeyedVectors):
+        self.buf = OCLInput(ctx, queue)
+        self.w2v = w2v
+        self.count = None
+
+    def assign(self, haystack:List[str]):
+        assert len(haystack) < 32768, 'TODO: allow dynamic size of haystack'
+        hs_inds = np.array([w2v_get_index(self.w2v, i) for i in haystack], np.int32)
+        self.buf.assign(hs_inds)
+        self.count = len(haystack)
+
+    def __enter__(self):
+        self.buf.__enter__()
+        return self
+
+    def __exit__(self, t, v, bt):
+        self.buf.__exit__(t, v, bt)
+
+
+class LevensteinSearchCL:
+    # TODO: generate config
+    def __init__(self, w2v:KeyedVectors, del_cost:int, ins_cost:int, default_dist:int):
+        self.w2v = w2v
+
+        self.ctx = cl.create_some_context(interactive=False)
+
+        is_le = sys.byteorder == 'little'
+        assert all(i.endian_little == is_le for i in self.ctx.devices), 'This code assumes that host and OpenCL device have the same endianess'
+
+        self.queue = cl.CommandQueue(self.ctx)
+        self.dictionary = OCLInput(self.ctx, self.queue, w2v.vectors)
+
+        self.dist = OCLOutput(self.ctx, self.queue, np.float32)
+        self.ind = OCLOutput(self.ctx, self.queue, np.uint32)
+
+        with open(Path(__file__).parent / 'levenstein.cl') as src_file:
+            self.program = cl.Program(self.ctx, src_file.read()).build()
+
+    def prepare_needles(self, needles):
+        return Needles(self.ctx, self.queue, self.w2v, needles)
+
+    def prepare_haystack(self):
+        return Haystack(self.ctx, self.queue, self.w2v)
+
+    def __enter__(self):
+        self.dist.__enter__()
+        self.ind.__enter__()
+        self.dictionary.__enter__()
+        return self
+
+    def __exit__(self, t, v, bt):
+        self.dist.__exit__(t, v, bt)
+        self.ind.__exit__(t, v, bt)
+        self.dictionary.__exit__(t, v, bt)
+
+    def search(self, needles:Needles, haystack:Haystack):
+        assert isinstance(haystack, Haystack)
+        assert isinstance(needles, Needles)
+
+        self.dist.resize(needles.count)
+        self.ind.resize(needles.count)
+
+        self.program.levenstein_score_all_needles(
+            self.queue, (needles.count,), None,
+            self.dictionary.buf, np.uint32(len(self.w2v.vectors)),
+            needles.needles.buf,
+            needles.offsets.buf,
+            haystack.buf.buf, np.uint32(haystack.count),
+            self.dist.buf,
+            self.ind.buf)
+        return self.dist.get(), self.ind.get()
