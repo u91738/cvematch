@@ -23,6 +23,8 @@ class MatcherConfig:
 
 
 class CVEDesc:
+    '''File change in a CVE fix'''
+
     def __init__(self, change_id:str, before:List[CVEHunk], after:List[CVEHunk]):
         self.change_id = change_id
         self.before = before
@@ -30,7 +32,7 @@ class CVEDesc:
         self.before_len = sum(len(i.tokens) for i in before)
         self.after_len = sum(len(i.tokens) for i in after)
 
-    def from_patch(change_id:str, diff:str):
+    def from_patch(change_id:str, diff:str) -> Optional[CVEDesc]:
         before = []
         after = []
         for patch in unidiff.PatchSet.from_string(diff):
@@ -79,14 +81,16 @@ class CveMatch:
     dist_a: float
 
 def fix_neg_zero(f:float):
-    '''floats are fun, pretend that -1e-6 is 0.0'''
+    '''floats are fun, pretend that (-1e-6 ... 1e-6) is 0.0'''
     return 0.0 if abs(f) < 1e-6 else f
 
 def fix_neg_zeros(fs:List[float]):
-    '''floats are fun, pretend that -1e-6 is 0.0'''
+    '''floats are fun, pretend that (-1e-6 ... 1e-6) is 0.0'''
     return [fix_neg_zero(i) for i in fs]
 
 class Matcher:
+    '''OpenCL matcher for CVE fixes'''
+
     def __init__(self, files, cves, conf):
         self.conf = conf
         self.needles_before_map = defaultdict(lambda: [])

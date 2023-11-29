@@ -9,6 +9,8 @@ from pathlib import Path
 
 
 class OCLInput:
+    '''Input to OpenCL kernel. Reuses the buffers where possible'''
+
     def __init__(self, ctx:cl.Context, queue:cl.CommandQueue, value:Optional[np.ndarray]=None):
         self.ctx = ctx
         self.queue = queue
@@ -41,6 +43,8 @@ class OCLInput:
 
 
 class OCLOutput:
+    '''Output from OpenCL kernel. Reuses the buffers where possible'''
+
     def __init__(self, ctx:cl.Context, queue:cl.CommandQueue, dtype, count:Optional[int]=None):
         self.buf = None
         self.used_count = None
@@ -83,6 +87,8 @@ def w2v_get_index(w2v, token):
 
 
 class Needles:
+    '''What to search. Knows how to pack itself for OpenCL kernel'''
+
     def __init__(self, ctx:cl.Context, queue:cl.CommandQueue, w2v:KeyedVectors, needles:List[List[str]]):
         tmp_needles = []
         tmp_needle_offsets = []
@@ -106,6 +112,8 @@ class Needles:
 
 
 class Haystack:
+    '''Where to search'''
+
     def __init__(self, ctx:cl.Context, queue:cl.CommandQueue, w2v:KeyedVectors):
         self.buf = OCLInput(ctx, queue)
         self.w2v = w2v
@@ -126,6 +134,8 @@ class Haystack:
 
 
 class LevensteinSearchCL:
+    '''Wrapper for OpenCL kernel with main search logic. Mostly manages resources'''
+
     def __init__(self, w2v:KeyedVectors, haystack_max:int, del_cost:int, ins_cost:int, default_dist:int):
         self.w2v = w2v
 

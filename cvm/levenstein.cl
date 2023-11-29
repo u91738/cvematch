@@ -1,3 +1,15 @@
+/*
+OpenCL implementation of search for position
+where subsequence has minimal distance to a sequence.
+
+Distance is a Levenstein distance modification where
+- items for deletion/insertion/substitution are words, not characters
+- words are represented as word2vec vectors
+- substitution cost is cosine distance between these vectors
+
+Cosine distance goes from 0 to 2, so default insertion and deletion costs are 2
+*/
+
 #ifndef DEL_COST
 #define DEL_COST 2
 #endif
@@ -18,6 +30,7 @@
 #define VECTOR_SIZE 128
 #endif
 
+// bigger cache has very little preformance benefits
 #ifndef CACHE_SIZE
 #define CACHE_SIZE 10000
 #endif
@@ -74,6 +87,9 @@ static inline float min3(float a, float b, float c) {
 }
 
 
+/**
+ * Find index of a minimal element
+ */
 static inline uint argmin(float *a, uint a_size) {
     uint r = 0;
     for(uint i = 0; i < a_size; ++i) {
@@ -84,6 +100,10 @@ static inline uint argmin(float *a, uint a_size) {
 }
 
 
+/**
+ * Find index in haystack where needle has minimal distance to haystack.
+ * Returns index and distance
+ */
 void levenstein_search(
     __constant const float *dictionary,
     __constant const int *needle, uint needle_size,
@@ -99,6 +119,12 @@ void levenstein_search(
         *ind = -1;
         *dist = INFINITY;
     } else {
+        /*
+            "matrix" levenstein distance algorithm that preserves only last 2 rows.
+            To convert from distance computation to search
+            set buffer to zeros instead of 1,2,3,4,...
+            then return index of minimal value from v0.
+        */
         float buf0[HAYSTACK_MAX] = {0};
         float buf1[HAYSTACK_MAX] = {0};
         float *v0 = buf0;
@@ -127,10 +153,14 @@ void levenstein_search(
 }
 
 
+/**
+ * Find index in haystack where needle has minimal distance to haystack.
+ * Returns index and distance / size of matched needle
+ */
 __kernel void levenstein_score_all_needles(
     __constant const float *dictionary, uint dictionary_size,
     __constant const int *needles, // each needle must start with size as zero element
-    __constant const uint *needle_offsets,
+    __constant const uint *needle_offsets, // offsets where each needle starts for fast indexing
     __constant const int *haystack, uint haystack_size,
     __global float *dist,
     __global int *ind
