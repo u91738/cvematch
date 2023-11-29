@@ -133,27 +133,28 @@ with cvm.Database(arg.db) as db:
         print('No CVEs to check. Will use all C/C++ CVE records')
         cves = get_cves(db)
 
+    print(len(cves), 'file diffs in cves')
+
     with cvm.Matcher(arg.files, cves, conf) as m:
         print(len(arg.files), 'files, max tokens in file: ', m.haystack_max)
         print('OpenCL search running on ', ', '.join(i.name for i in m.lev.ctx.devices))
         for fname, ftokens in m.files:
             print('Processing', fname, 'tokens:', len(ftokens))
-            for score_b, score_a, matches, cve in m.match(ftokens):
-                r = db.cve_report(cve.change_id)
-                cve_rep = db.cve_report(cve.change_id)
-                print('Matched', cve_rep.cve_id, 'with score', '%0.6f' % score_b, '-', '%0.6f' % score_a)
-                if arg.report_cve_info:
-                    print('CVE Info:', cve_rep.description)
-                if arg.report_cwe:
-                    for cwe in cve_rep.cwe:
-                        print(cwe.cwe_id, '-', cwe.cwe_name)
-                if arg.report_diff_full:
-                    print('diff:')
-                    print(cve_rep.diff)
-                with open(fname, 'r') as f:
-                    tokens = cvm.tokenize(f.read(), get_line=True)
-                    for match in matches:
-                        print(f'{fname}:{tokens[match.start_token_ind]}:0   ', '%0.6f' % match.dist_b)
-                        if arg.report_diff:
-                            print(match.hunk.src)
-                print('')
+            for match in m.match(ftokens):
+                for cve_rep in db.cve_report(match.cve.change_id):
+                    print('Matched', cve_rep.cve_id, 'with score', '%0.6f' % match.dist_b, '- %0.6f' % match.dist_a)
+                    if arg.report_cve_info:
+                        print('CVE Info:', cve_rep.description)
+                    if arg.report_cwe:
+                        for cwe in cve_rep.cwe:
+                            print(cwe.cwe_id, '-', cwe.cwe_name)
+                    if arg.report_diff_full:
+                        print('diff:')
+                        print(cve_rep.diff)
+                    with open(fname, 'r') as f:
+                        tokens = cvm.tokenize(f.read(), get_line=True)
+                        for h in match.hunks:
+                            print(f'{fname}:{tokens[h.start_token_ind]}:0   ', '%0.6f' % h.dist_b, '- %0.6f' % h.dist_a)
+                            if arg.report_diff:
+                                print(h.hunk.src)
+                    print('')

@@ -69,7 +69,22 @@ class HunkMatch:
     start_token_ind: int
     hunk: CVEHunk
     dist_b: float
+    dist_a: float
 
+@dataclass
+class CveMatch:
+    cve: CVEDesc
+    hunks: List[HunkMatch]
+    dist_b: float
+    dist_a: float
+
+def fix_neg_zero(f:float):
+    '''floats are fun, pretend that -1e-6 is 0.0'''
+    return 0.0 if abs(f) < 1e-6 else f
+
+def fix_neg_zeros(fs:List[float]):
+    '''floats are fun, pretend that -1e-6 is 0.0'''
+    return [fix_neg_zero(i) for i in fs]
 
 class Matcher:
     def __init__(self, files, cves, conf):
@@ -107,7 +122,7 @@ class Matcher:
         self.lev.__exit__(t, v, bt)
         self.haystack.__exit__(t, v, bt)
 
-    def match(self, haystack_tokens):
+    def match(self, haystack_tokens) -> List[CveMatch]:
         self.haystack.assign(haystack_tokens)
 
         # match with CVEs before fix
@@ -116,9 +131,10 @@ class Matcher:
         # gather cve's that scored below limit
         scores_b = dict()
         for cve, hunk_inds in self.needles_before_map.items():
-            score_b = np.mean(dist_b[hunk_inds])
+            raw_scores = dist_b[hunk_inds]
+            score_b = np.mean(raw_scores)
             if score_b < self.conf.max_score:
-                scores_b[cve] = score_b
+                scores_b[cve] = score_b, raw_scores
 
         # prepare CVEs after fix for CVEs that scored low enough
         needles_after_map = defaultdict(lambda: [])
@@ -133,10 +149,21 @@ class Matcher:
             dist_a, _ = self.lev.search(needles_a, self.haystack)
 
         res = []
-        for cve, score_b in scores_b.items():
-            score_a = np.mean(dist_a[needles_after_map[cve]])
+        for cve, (score_b, raw_scores_b) in scores_b.items():
+            raw_scores_a = dist_a[needles_after_map[cve]]
+            score_a = np.mean(raw_scores_a)
             # if file is more similar to state before fix than after fix - gather results
             if score_b < score_a:
-                matches = [HunkMatch(i, hunk, db) for i, hunk, db in zip(ind[hunk_inds], cve.before, dist_b[hunk_inds])]
-                res.append((score_b, score_a, matches, cve))
+                score_b = fix_neg_zero(score_b)
+                score_a = fix_neg_zero(score_a)
+
+                assert score_b >= 0 and score_a >= 0
+
+                matches = [HunkMatch(i, hunk, db, da)
+                            for i, hunk, db, da in
+                                zip(ind[self.needles_before_map[cve]],
+                                    cve.before,
+                                    fix_neg_zeros(raw_scores_b),
+                                    fix_neg_zeros(raw_scores_a))]
+                res.append(CveMatch(cve, matches, score_b, score_a))
         return res

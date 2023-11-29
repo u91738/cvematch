@@ -60,9 +60,9 @@ class Database:
         return self.__select(self.cwe_list_sql)
 
     def cve_report(self, file_change_id):
-        [(cve_id, description, diff)] = self.__select(self.cve_report_sql, file_change_id)
-        cwes = self.__select(self.cve_report_cwe_sql, cve_id)
-        return CveReport(cve_id, description, diff, [Cwe(*i) for i in cwes])
+        for (cve_id, description, diff) in self.__select(self.cve_report_sql, file_change_id):
+            cwes = self.__select(self.cve_report_cwe_sql, cve_id)
+            yield CveReport(cve_id, description, diff, [Cwe(*i) for i in cwes])
 
     def all_code(self):
         return self.__select(self.all_code_sql)
