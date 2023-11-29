@@ -25,14 +25,16 @@ class MatcherConfig:
 class CVEDesc:
     '''File change in a CVE fix'''
 
-    def __init__(self, change_id:str, before:List[CVEHunk], after:List[CVEHunk]):
+    def __init__(self, change_id:str, cve_id:str, cwe_id:str, before:List[CVEHunk], after:List[CVEHunk]):
         self.change_id = change_id
+        self.cve_id = cve_id
+        self.cwe_id = cwe_id
         self.before = before
         self.after = after
         self.before_len = sum(len(i.tokens) for i in before)
         self.after_len = sum(len(i.tokens) for i in after)
 
-    def from_patch(change_id:str, diff:str) -> Optional[CVEDesc]:
+    def from_patch(change_id:str, cve_id:str, cwe_id:str, diff:str):
         before = []
         after = []
         for patch in unidiff.PatchSet.from_string(diff):
@@ -61,7 +63,7 @@ class CVEDesc:
                     after.append(CVEHunk(hunk_after))
                     last_hunk_end_a = hunk.target_start + hunk.target_length
         if before:
-            return CVEDesc(change_id, before, after)
+            return CVEDesc(change_id, cve_id, cwe_id, before, after)
         else:
             return None
 

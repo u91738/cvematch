@@ -29,7 +29,7 @@ class Database:
         self.cve_list_sql = read_file('sql/cve_list.sql')
         self.cwe_list_sql = read_file('sql/cwe_list.sql')
         self.cve_report_sql = read_file('sql/cve_report.sql')
-        self.cve_report_cwe_sql = read_file('sql/cve_report_cwe.sql')
+        self.cwe_get_cves = read_file('sql/cwe_get_cves.sql')
         self.all_code_sql = read_file('sql/code_all.sql')
 
     def __enter__(self):
@@ -44,8 +44,11 @@ class Database:
         c.execute(sql, args)
         res = []
         while f := c.fetchone():
-            res.append(f)
+            res.append(f[0] if len(f) == 1 else f)
         return res
+
+    def get_cves_by_cwe(self, cwe_id):
+        return self.__select(self.cwe_get_cves, cwe_id)
 
     def get_cve(self, cve_id):
         return self.__select(self.cve_get_changes_sql, cve_id)

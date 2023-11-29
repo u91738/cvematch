@@ -11,17 +11,17 @@ def db_diff_to_git_diff(diff_str):
 
 def get_cves(db):
     res = []
-    for file_change_id, diff_str in db.get_cves():
+    for file_change_id, cve_id, cwe_id, diff_str in db.get_cves():
         diff = db_diff_to_git_diff(diff_str)
-        if cve := cvm.CVEDesc.from_patch(file_change_id, diff):
+        if cve := cvm.CVEDesc.from_patch(file_change_id, cve_id, cwe_id, diff):
             res.append(cve)
     return res
 
 def get_cve(db, cve_id):
     res = []
-    for file_change_id, diff_str in db.get_cve(cve_id):
+    for file_change_id, cve_id, cwe_id, diff_str in db.get_cve(cve_id):
         diff = db_diff_to_git_diff(diff_str)
-        if cve := cvm.CVEDesc.from_patch(file_change_id, diff):
+        if cve := cvm.CVEDesc.from_patch(file_change_id, cve_id, cwe_id, diff):
             res.append(cve)
     return res
 
@@ -55,7 +55,6 @@ ap.add_argument('--db',
                 default=None)
 ap.add_argument('--cve', action='append', default=[], help='CVE id to check. Can be repeated.')
 ap.add_argument('--cwe', action='append', default=[], help='Check all CVEs with this CWE id. Can be repeated.')
-ap.add_argument('--no-cve', action='append', default=[], help='CVE id to not check. Can be repeated.')
 ap.add_argument('--w2v-show', action='store_true', help='show distances to some word2vec tokens')
 ap.add_argument('--w2v-list', action='store_true', help='list available word2vec files')
 ap.add_argument('--w2v', default='w2v-cbow-v128-w5', help='word2vec files name to use, see --w2v-list')
@@ -65,6 +64,10 @@ ap.add_argument('--report-cve-info', action='store_true', help='show CVE descrip
 ap.add_argument('--report-cwe', action='store_true', help='show CWE id and description for matches')
 ap.add_argument('--report-diff', action='store_true', help='on match, show diff for matching hunk in CVE fix')
 ap.add_argument('--report-diff-full', action='store_true', help='on match, show full diff of CVE fix')
+ap.add_argument('--report-diff-id', action='store_true', help='on match, show internal id of matched diff to be used in --ignore')
+ap.add_argument('--ignore', action='append', default=[],
+                help='CVE id, CWE id or diff id to ignore. See --cve-list, --cwe-list, --report-diff-id')
+
 ap.add_argument('--max-score', default=0.2, type=float,
                 help='Max score value that is considered low enough to show as a result. Reasonable values are from 0.05 (~exact copy of CVE) to 0.3 (loosely reminds of some CVE)')
 ap.add_argument('--levenstein-ins-cost', default=2, type=float, help='insertion cost in levenstein distance computation')
@@ -85,55 +88,63 @@ if arg.w2v_list:
         if i.startswith('w2v-') and not i.endswith('.npy'):
             print(i)
     print()
+    exit()
 
 w2v_fname = datadir / arg.w2v
 if not w2v_fname.is_file():
     print('word2vec model', w2v_fname, 'not found', file=sys.stderr)
     print('Train it with something like ./w2v.py --vector-size 128 --window-size 5', file=sys.stderr)
-    exit(-1)
+    exit(1)
 
 w2v = KeyedVectors.load(str(w2v_fname))
 
 if arg.w2v_show:
     w2v_show(w2v)
-
+    exit()
 
 conf = cvm.MatcherConfig(w2v, arg.max_score, arg.levenstein_ins_cost, arg.levenstein_del_cost)
 
 cve_ids = []
 cve_ids += arg.cve
 
-if arg.cwe:
-    print('CWE filtering is not supported yet', file=sys.stderr)
-    exit(1)
-
-if arg.no_cve:
-    for i in arg.no_cve:
-        try:
-            cve_ids.remove(i)
-        except ValueError:
-            pass
-
-if not arg.files:
-    print('No source files specified', file=sys.stderr)
-    exit(1)
-
 with cvm.Database(arg.db) as db:
     if arg.cve_list:
         cve_show(db)
+        exit()
 
     if arg.cwe_list:
         cwe_show(db)
+        exit()
+
+    if not arg.files:
+        print('No source files specified', file=sys.stderr)
+        exit(1)
+
+    if arg.cwe:
+        for cwe_id in arg.cwe:
+            cve_ids += db.get_cves_by_cwe(cwe_id)
 
     if cve_ids:
-        print('Will check:')
-        print('\n'.join(cve_ids))
         cves = [cve for cve_id in cve_ids for cve in get_cve(db, cve_id)]
     else:
-        print('No CVEs to check. Will use all C/C++ CVE records')
+        print('No CVEs specified. Default to all C/C++ CVE records')
         cves = get_cves(db)
 
-    print(len(cves), 'file diffs in cves')
+    if arg.ignore:
+        cve_ignore = set(i for i in arg.ignore if i.startswith('CVE'))
+        cwe_ignore = set(i for i in arg.ignore if i.startswith('CWE'))
+        id_ignore = set(i for i in arg.ignore if i.isdigit())
+        cves = [i for i in cves if i.change_id not in id_ignore and i.cve_id not in cve_ignore and i.cwe_id not in cwe_ignore]
+
+
+    if len(cves):
+        print('Will check:')
+        print('\n'.join(set(i.cve_id for i in cves)))
+
+        print(len(cves), 'file diffs in cves')
+    else:
+        print('No CVEs to match', file=sys.stderr)
+        exit(1)
 
     with cvm.Matcher(arg.files, cves, conf) as m:
         print(len(arg.files), 'files, max tokens in file: ', m.haystack_max)
@@ -143,6 +154,8 @@ with cvm.Database(arg.db) as db:
             for match in m.match(ftokens):
                 for cve_rep in db.cve_report(match.cve.change_id):
                     print('Matched', cve_rep.cve_id, 'with score', '%0.6f' % match.dist_b, '- %0.6f' % match.dist_a)
+                    if arg.report_diff_id:
+                        print('Diff id:', match.cve.change_id)
                     if arg.report_cve_info:
                         print('CVE Info:', cve_rep.description)
                     if arg.report_cwe:
