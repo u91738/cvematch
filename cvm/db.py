@@ -31,6 +31,7 @@ class Database:
         self.cve_report_sql = read_file('sql/cve_report.sql')
         self.cwe_get_cves = read_file('sql/cwe_get_cves.sql')
         self.all_code_sql = read_file('sql/code_all.sql')
+        self.cve_report_cwe_sql = read_file('sql/cve_report_cwe.sql')
 
     def __enter__(self):
         self.__db = sqlite3.connect(self.fname)
