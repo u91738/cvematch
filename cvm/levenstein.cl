@@ -147,7 +147,7 @@ void levenstein_search(
 
         int i = argmin(v0, haystack_size + 1);
 
-        *ind = i - needle_size;
+        *ind = i >= needle_size ? i - needle_size : 0;
         *dist = v0[i];
     }
 }
