@@ -26,6 +26,7 @@ class CVEDesc:
     '''File change in a CVE fix'''
 
     def __init__(self, change_id:str, cve_id:str, cwe_id:str, before:List[CVEHunk], after:List[CVEHunk]):
+        assert len(before) > 0
         self.change_id = change_id
         self.cve_id = cve_id
         self.cwe_id = cwe_id
@@ -167,10 +168,11 @@ class Matcher:
                 score_a = fix_neg_zero(score_a)
 
                 assert score_b >= 0 and score_a >= 0
-
+                ind_before = ind[self.needles_before_map[cve]]
+                assert np.all(ind_before < 0xFFFFFF00)
                 matches = [HunkMatch(i, hunk, db, da)
                             for i, hunk, db, da in
-                                zip(ind[self.needles_before_map[cve]],
+                                zip(ind_before,
                                     cve.before,
                                     fix_neg_zeros(raw_scores_b),
                                     fix_neg_zeros(raw_scores_a))]

@@ -20,6 +20,7 @@ class OCLInput:
             self.assign(value)
 
     def __alloc(self, value:np.ndarray, size:int):
+        assert size > 0
         if self.buf is not None:
             self.buf.release()
         flags = cl.mem_flags.HOST_WRITE_ONLY | cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR
