@@ -34,7 +34,7 @@ class CVEDesc:
         self.before_len = sum(len(i.tokens) for i in before)
         self.after_len = sum(len(i.tokens) for i in after)
 
-    def from_patch(change_id:str, cve_id:str, cwe_id:str, diff:str):
+    def from_patch(change_id:str, cve_id:str, cwe_id:str, diff:str, min_hunk_tokens):
         before = []
         after = []
         for patch in unidiff.PatchSet.from_string(diff):
@@ -56,10 +56,10 @@ class CVEDesc:
                 dist_b = hunk.source_start - last_hunk_end_b if last_hunk_end_b else None
                 dist_a = hunk.target_start - last_hunk_end_a if last_hunk_end_a else None
                 src = ''.join(hunk_src)
-                if hunk_before:
+                if len(hunk_before) >= min_hunk_tokens:
                     before.append(CVEHunk(hunk_before, src))
                     last_hunk_end_b = hunk.source_start + hunk.source_length
-                if hunk_after:
+                if len(hunk_after) >= min_hunk_tokens:
                     after.append(CVEHunk(hunk_after))
                     last_hunk_end_a = hunk.target_start + hunk.target_length
         if before:
@@ -141,6 +141,9 @@ class Matcher:
             score_b = np.mean(raw_scores)
             if score_b < self.conf.max_score:
                 scores_b[cve] = score_b, raw_scores
+
+        if len(scores_b) == 0:
+            return []
 
         # prepare CVEs after fix for CVEs that scored low enough
         needles_after_map = defaultdict(lambda: [])

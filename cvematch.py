@@ -9,19 +9,19 @@ import argparse
 def db_diff_to_git_diff(diff_str):
     return f'diff --git a/a.cpp b/a.cpp\nindex 0000..0000 000000\n' + diff_str
 
-def get_cves(db):
+def get_cves(db, min_hunk_tokens):
     res = []
     for file_change_id, cve_id, cwe_id, diff_str in db.get_cves():
         diff = db_diff_to_git_diff(diff_str)
-        if cve := cvm.CVEDesc.from_patch(file_change_id, cve_id, cwe_id, diff):
+        if cve := cvm.CVEDesc.from_patch(file_change_id, cve_id, cwe_id, diff, min_hunk_tokens):
             res.append(cve)
     return res
 
-def get_cve(db, cve_id):
+def get_cve(db, cve_id, min_hunk_tokens):
     res = []
     for file_change_id, cve_id, cwe_id, diff_str in db.get_cve(cve_id):
         diff = db_diff_to_git_diff(diff_str)
-        if cve := cvm.CVEDesc.from_patch(file_change_id, cve_id, cwe_id, diff):
+        if cve := cvm.CVEDesc.from_patch(file_change_id, cve_id, cwe_id, diff, min_hunk_tokens):
             res.append(cve)
     return res
 
@@ -68,6 +68,8 @@ ap.add_argument('--report-diff-id', action='store_true', help='on match, show in
 ap.add_argument('--ignore', action='append', default=[],
                 help='CVE id, CWE id or diff id to ignore. See --cve-list, --cwe-list, --report-diff-id')
 
+ap.add_argument('--min-hunk-tokens', default=30, type=int,
+                help='minimal token count for change to matter')
 ap.add_argument('--max-score', default=0.2, type=float,
                 help='Max score value that is considered low enough to show as a result. Reasonable values are from 0.05 (~exact copy of CVE) to 0.3 (loosely reminds of some CVE)')
 ap.add_argument('--levenstein-ins-cost', default=2, type=float, help='insertion cost in levenstein distance computation')
@@ -125,10 +127,10 @@ with cvm.Database(arg.db) as db:
             cve_ids += db.get_cves_by_cwe(cwe_id)
 
     if cve_ids:
-        cves = [cve for cve_id in cve_ids for cve in get_cve(db, cve_id)]
+        cves = [cve for cve_id in cve_ids for cve in get_cve(db, cve_id, arg.min_hunk_tokens)]
     else:
         print('No CVEs specified. Default to all C/C++ CVE records')
-        cves = get_cves(db)
+        cves = get_cves(db, arg.min_hunk_tokens)
 
     if arg.ignore:
         cve_ignore = set(i for i in arg.ignore if i.startswith('CVE'))
@@ -139,7 +141,7 @@ with cvm.Database(arg.db) as db:
 
     if len(cves):
         print('Will check:')
-        print('\n'.join(set(i.cve_id for i in cves)))
+        print(', '.join(set(i.cve_id for i in cves)))
 
         print(len(cves), 'file diffs in cves')
     else:
