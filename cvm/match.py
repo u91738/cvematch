@@ -1,6 +1,7 @@
 from collections import defaultdict
 from typing import List, Optional
 from dataclasses import dataclass
+import itertools as it
 import unidiff
 import numpy as np
 from gensim.models.keyedvectors import KeyedVectors
@@ -32,8 +33,15 @@ class CVEDesc:
         self.cwe_id = cwe_id
         self.before = before
         self.after = after
-        self.before_len = sum(len(i.tokens) for i in before)
-        self.after_len = sum(len(i.tokens) for i in after)
+
+    def split(self):
+        return [CVEDesc(self.change_id,
+                        self.cve_id,
+                        self.cwe_id,
+                        [b],
+                        [] if a is None else [a])
+                for b, a in it.zip_longest(self.before, self.after)
+                if b is not None]
 
     def from_patch(change_id:str, cve_id:str, cwe_id:str, diff:str, min_hunk_tokens):
         before = []
@@ -155,13 +163,18 @@ class Matcher:
                 needles_after.append(hunk.tokens)
 
         # match with CVEs after fix
-        with self.lev.prepare_needles(needles_after) as needles_a:
-            dist_a, _ = self.lev.search(needles_a, self.haystack)
+        if needles_after:
+            with self.lev.prepare_needles(needles_after) as needles_a:
+                dist_a, _ = self.lev.search(needles_a, self.haystack)
 
         res = []
         for cve, (score_b, raw_scores_b) in scores_b.items():
-            raw_scores_a = dist_a[needles_after_map[cve]]
-            score_a = np.mean(raw_scores_a)
+            if needles_after:
+                raw_scores_a = dist_a[needles_after_map[cve]]
+                score_a = np.mean(raw_scores_a)
+            else:
+                raw_scores_a, score_a = [], 1
+
             # if file is more similar to state before fix than after fix - gather results
             if score_b < score_a:
                 score_b = fix_neg_zero(score_b)
@@ -170,11 +183,13 @@ class Matcher:
                 assert score_b >= 0 and score_a >= 0
                 ind_before = ind[self.needles_before_map[cve]]
                 assert np.all(ind_before < 0xFFFFFF00)
-                matches = [HunkMatch(i, hunk, db, da)
+
+                matches = [HunkMatch(i, hunk, db, da or 1)
                             for i, hunk, db, da in
-                                zip(ind_before,
+                                it.zip_longest(
+                                    ind_before,
                                     cve.before,
                                     fix_neg_zeros(raw_scores_b),
-                                    fix_neg_zeros(raw_scores_a))]
+                                    fix_neg_zeros(raw_scores_a[:len(raw_scores_b)]))]
                 res.append(CveMatch(cve, matches, score_b, score_a))
         return res

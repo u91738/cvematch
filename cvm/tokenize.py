@@ -1,6 +1,6 @@
 import re
 
-tokenizer = re.compile('([A-Z]{2,}|[A-Za-z][a-z]+|[0-9.]+|0x[0-9a-zA-Z]+|<<=?|>>=?|[+][+]|--|-=|[+*/&|%!=<>^]=|&&|[|][|]|->|[.]|::|\n|\s+|//[^\n]+\n|/[*]|[*]/|.)')
+tokenizer = re.compile('(#include\s+[^\n]+\n|[A-Z]{2,}|[A-Za-z][a-z]+|[0-9.]+|0x[0-9a-zA-Z]+|<<=?|>>=?|[+][+]|--|-=|[+*/&|%!=<>^]=|&&|[|][|]|->|[.]|::|\n|\s+|//[^\n]+\n|/[*]|[*]/|.)')
 
 def tokenize(s, replace_numbers=True, get_line=False):
     '''Roughly tokenize C++ code.
@@ -20,7 +20,7 @@ def tokenize(s, replace_numbers=True, get_line=False):
 
     while (m := sc.match()) is not None:
         token = m.group()
-        if token == '\n' or token.startswith('//'):
+        if token == '\n' or token.startswith('//') or token.startswith('#include'):
             line += 1
 
         if not token.isspace() and token != '_' and not token.startswith('//'):

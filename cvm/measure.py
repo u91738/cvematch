@@ -121,7 +121,6 @@ class Haystack:
         self.count = None
 
     def assign(self, haystack:List[str]):
-        assert len(haystack) < 32768, 'TODO: allow dynamic size of haystack'
         hs_inds = np.array([w2v_get_index(self.w2v, i) for i in haystack], np.int32)
         self.buf.assign(hs_inds)
         self.count = len(haystack)

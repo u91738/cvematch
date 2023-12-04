@@ -46,7 +46,7 @@ def cwe_show(db):
         print('CVEs with this CWE:', cve_count, '\n')
 
 ap = argparse.ArgumentParser(
-    usage="./cvematch.py --report-diff --cve='CVE-1999-0199' --max-score 0.3 some/project/src/*.c",
+    usage="./cvematch.py --report-cve-info --report-cwe --report-diff --cve='CVE-1999-0199' some/project/src/*.c",
     description='''Match known CVE fixes to your code.
                    The result should be interpreted as "structure of this code loosely reminds the code that lead to CVE-123"''')
 
@@ -67,6 +67,8 @@ ap.add_argument('--report-diff-full', action='store_true', help='on match, show 
 ap.add_argument('--report-diff-id', action='store_true', help='on match, show internal id of matched diff to be used in --ignore')
 ap.add_argument('--ignore', action='append', default=[],
                 help='CVE id, CWE id or diff id to ignore. See --cve-list, --cwe-list, --report-diff-id')
+ap.add_argument('--ignore-file', help='file with --ignore args separated by new line')
+ap.add_argument('--split-diffs', action='store_true', help='treat each hunk of file change as separate file diff')
 
 ap.add_argument('--min-hunk-tokens', default=30, type=int,
                 help='minimal token count for change to matter')
@@ -132,25 +134,33 @@ with cvm.Database(arg.db) as db:
         print('No CVEs specified. Default to all C/C++ CVE records')
         cves = get_cves(db, arg.min_hunk_tokens)
 
+    if arg.ignore_file:
+        with open(arg.ignore_file, 'r') as f:
+            for i in f:
+                arg.ignore.append(i.strip())
     if arg.ignore:
         cve_ignore = set(i for i in arg.ignore if i.startswith('CVE'))
         cwe_ignore = set(i for i in arg.ignore if i.startswith('CWE'))
         id_ignore = set(i for i in arg.ignore if i.isdigit())
         cves = [i for i in cves if i.change_id not in id_ignore and i.cve_id not in cve_ignore and i.cwe_id not in cwe_ignore]
 
+    if arg.split_diffs:
+        cves = [i for cve in cves for i in cve.split()]
 
     if len(cves):
-        print('Will check:')
-        print(', '.join(set(i.cve_id for i in cves)))
-
-        print(len(cves), 'file diffs in cves')
+        if len(cves) < 100:
+            print('Will check:')
+            print(', '.join(set(i.cve_id for i in cves)))
+            print(len(cves), 'file diffs in cves')
+        else:
+            print('Will check', len(cves), 'diffs')
     else:
         print('No CVEs to match', file=sys.stderr)
         exit(1)
 
     with cvm.Matcher(arg.files, cves, conf) as m:
         print(len(arg.files), 'files, max tokens in file: ', m.haystack_max)
-        print('OpenCL search running on ', ', '.join(i.name for i in m.lev.ctx.devices))
+        print('OpenCL search running on', ', '.join(i.name for i in m.lev.ctx.devices))
         for fname, ftokens in m.files:
             print('Processing', fname, 'tokens:', len(ftokens))
             for match in m.match(ftokens):
