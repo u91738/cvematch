@@ -82,7 +82,8 @@ class OCLOutput:
             self.buf.release()
 
 
-def w2v_get_index(w2v, token):
+def w2v_get_index(w2v, token:str):
+    assert isinstance(token, str)
     r = w2v.key_to_index.get(token)
     return -1 if r is None else r
 

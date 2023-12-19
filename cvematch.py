@@ -74,7 +74,7 @@ ap.add_argument('--max-file-len', type=int, default=2**14,
 
 ap.add_argument('--min-hunk-tokens', default=30, type=int,
                 help='minimal token count for change to matter')
-ap.add_argument('--max-score', default=0.2, type=float,
+ap.add_argument('--max-score', default=0.3, type=float,
                 help='Max score value that is considered low enough to show as a result. Reasonable values are from 0.05 (~exact copy of CVE) to 0.3 (loosely reminds of some CVE)')
 ap.add_argument('--levenstein-ins-cost', default=2, type=float, help='insertion cost in levenstein distance computation')
 ap.add_argument('--levenstein-del-cost', default=2, type=float, help='deletion cost in levenstein distance computation')
@@ -163,7 +163,7 @@ with cvm.Database(arg.db) as db:
     with cvm.Matcher(arg.files, cves, conf) as m:
         print(len(arg.files), 'files, max tokens in file: ', m.haystack_max)
         print('OpenCL search running on', ', '.join(i.name for i in m.lev.ctx.devices))
-        for fname, ftokens, flines in m.files:
+        for fname, flines, ftokens in m.files:
             print('Processing', fname, 'tokens:', len(ftokens))
             for match in m.match(ftokens):
                 for cve_rep in db.cve_report(match.cve.change_id):

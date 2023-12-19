@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from dataclasses import dataclass
 import itertools as it
 import more_itertools as mit
@@ -12,8 +12,14 @@ from .measure import LevensteinSearchCL
 
 @dataclass
 class CVEHunk:
-    tokens:List[str]
+    tokens:List[Tuple[int, str]]
     src:Optional[str] = None
+
+    def token_values(self):
+        return [i[1] for i in self.tokens]
+
+    def token_inds(self):
+        return [i[0] for i in self.tokens]
 
 
 @dataclass
@@ -111,20 +117,20 @@ class Matcher:
         for cve in cves:
             for hunk in cve.before:
                 self.needles_before_map[cve].append(len(self.needles_before))
-                self.needles_before.append(hunk.tokens)
+                self.needles_before.append(hunk.token_values())
 
         self.files = []
         for fname in files:
 
             with open(fname, 'r', errors='ignore') as f:
-                tokens, lines = mit.unzip(tokenize(f.read()))
-                tokens, lines = list(tokens), list(lines)
+                lines, tokens = mit.unzip(tokenize(f.read()))
+                lines, tokens = list(lines), list(tokens)
                 while len(tokens) > conf.max_file_len:
-                    self.files.append((fname, tokens[:conf.max_file_len], lines[:conf.max_file_len]))
+                    self.files.append((fname, lines[:conf.max_file_len], tokens[:conf.max_file_len]))
                     start_ind = int(conf.max_file_len*0.9)
-                    tokens, lines = tokens[start_ind:], lines[start_ind:]
+                    lines, tokens = lines[start_ind:], tokens[start_ind:]
 
-                self.files.append((fname, tokens, lines))
+                self.files.append((fname, lines, tokens))
 
         self.haystack_max = max(len(i[1]) for i in self.files)
 
@@ -171,7 +177,7 @@ class Matcher:
         for cve in scores_b.keys():
             for hunk in cve.after:
                 needles_after_map[cve].append(len(needles_after))
-                needles_after.append(hunk.tokens)
+                needles_after.append(hunk.token_values())
 
         # match with CVEs after fix
         if needles_after:
