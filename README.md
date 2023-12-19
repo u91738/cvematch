@@ -4,7 +4,7 @@ Reports should be interpreted as "structure of this code loosely reminds the cod
 Its purpose is to suggest candidates for manual code audit, somewhat like you would use a noisy static analyzer, not an SCA tool.
 C and C++ only, at least for now.
 
-Uses OpenCL for computation-intensive parts, you may want a machine with GPU.
+Uses OpenCL for computation-intensive parts, you may want a machine with a mid-range GPU.
 
 ## Usage
 
@@ -12,7 +12,7 @@ To prepare the dataset, change to the cvematch directory and run `./setup.sh` th
 
 ```
 $ ./cvematch.py --help
-usage: ./cvematch.py --report-diff --cve='CVE-1999-0199' --max-score 0.3 some/project/src/*.c
+usage: ./cvematch.py --report-cve-info --report-cwe --report-diff --cve='CVE-1999-0199' some/project/src/*.c
 
 Match known CVE fixes to your code. The result should be interpreted as "structure of this code
 loosely reminds the code that lead to CVE-123"
@@ -25,7 +25,6 @@ options:
   --db DB               Path to database
   --cve CVE             CVE id to check. Can be repeated.
   --cwe CWE             Check all CVEs with this CWE id. Can be repeated.
-  --no-cve NO_CVE       CVE id to not check. Can be repeated.
   --w2v-show            show distances to some word2vec tokens
   --w2v-list            list available word2vec files
   --w2v W2V             word2vec files name to use, see --w2v-list
@@ -33,8 +32,19 @@ options:
   --cwe-list            show list of available CWEs
   --report-cve-info     show CVE description for matches
   --report-cwe          show CWE id and description for matches
-  --report-diff         on match show diff for matching hunk in CVE fix
-  --report-diff-full    on match show full diff of CVE fix
+  --report-diff         on match, show diff for matching hunk in CVE fix
+  --report-diff-full    on match, show full diff of CVE fix
+  --report-diff-id      on match, show internal id of matched diff to be used in --ignore
+  --ignore IGNORE       CVE id, CWE id or diff id to ignore. See --cve-list, --cwe-list, --report-
+                        diff-id
+  --ignore-file IGNORE_FILE
+                        file with --ignore args separated by new line
+  --split-diffs         treat each hunk of file change as separate file diff
+  --max-file-len MAX_FILE_LEN
+                        set file length in tokens before it gets split into several pseudofiles. Use
+                        it to fix out of memory
+  --min-hunk-tokens MIN_HUNK_TOKENS
+                        minimal token count for change to matter
   --max-score MAX_SCORE
                         Max score value that is considered low enough to show as a result. Reasonable
                         values are from 0.05 (~exact copy of CVE) to 0.3 (loosely reminds of some
