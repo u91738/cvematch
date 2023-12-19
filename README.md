@@ -51,6 +51,50 @@ options:
                         CVE)
 ```
 
+## Output example
+
+This call to cvematch looks for CVE-1999-0199 in examples/88393274694273.c.
+When close enough match is found, it shows CVE description, related CWE and diff from CVE fix that matched at line 164.
+Score 0.266196 - 0.496774 means that found code has 0.266196 distance to original code in patch before CVE fix and 0.496774 to code after CVE fix.
+Where 0 is perfect match and 1 - completely different.
+0.000000 - 0.496774 is score for a specific hunk of a bigger patch in this specific place.
+
+```
+$ ./cvematch.py --report-cve-info --report-cwe --report-diff --cve='CVE-1999-0199' examples/88393274694273.c
+Will check:
+CVE-1999-0199
+4 file diffs in cves
+1 files, max tokens in file:  16384
+Processing examples/88393274694273.c tokens: 16384
+Matched CVE-1999-0199 with score 0.266196 - 0.496774
+CVE Info: "manual/search.texi in the GNU C Library (aka glibc) before 2.2 lacks
+a statement about the unspecified tdelete return value upon deletion of a tree's
+root, which might allow attackers to access a dangling pointer in an application
+whose developer was unaware of a documentation update from 1999."
+CWE-252 - Unchecked Return Value
+examples/88393274694273.c:164:0    0.000000 - 0.496774
+
+#  define SWITCH_ENUM_CAST(x) (x)
+# endif
+
+-/* How many characters in the character set.  */
+-# define CHAR_SET_SIZE 256
+-
+-# ifdef SYNTAX_TABLE
+-
+-extern char *re_syntax_table;
+-
+-# else /* not SYNTAX_TABLE */
+-
+-static char re_syntax_table[CHAR_SET_SIZE];
+-
+-static void
+-init_syntax_once ()
+-{
+
+// ... rest of long patch that matched at this offset in file
+```
+
 ## How it works
 
 Uses [CVEFixes](https://zenodo.org/records/7029359) dataset as a source of diffs for public vulnerabilities.
