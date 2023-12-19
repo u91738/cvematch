@@ -2,6 +2,7 @@ from collections import defaultdict
 from typing import List, Optional
 from dataclasses import dataclass
 import itertools as it
+import more_itertools as mit
 import unidiff
 import numpy as np
 from gensim.models.keyedvectors import KeyedVectors
@@ -18,6 +19,7 @@ class CVEHunk:
 @dataclass
 class MatcherConfig:
     w2v:KeyedVectors
+    max_file_len:int
     max_score:float
     levenstein_ins_cost:float
     levenstein_del_cost:float
@@ -113,8 +115,17 @@ class Matcher:
 
         self.files = []
         for fname in files:
-            with open(fname, 'r') as f:
-                self.files.append((fname, tokenize(f.read())))
+
+            with open(fname, 'r', errors='ignore') as f:
+                tokens, lines = mit.unzip(tokenize(f.read()))
+                tokens, lines = list(tokens), list(lines)
+                while len(tokens) > conf.max_file_len:
+                    self.files.append((fname, tokens[:conf.max_file_len], lines[:conf.max_file_len]))
+                    start_ind = int(conf.max_file_len*0.9)
+                    tokens, lines = tokens[start_ind:], lines[start_ind:]
+
+                self.files.append((fname, tokens, lines))
+
         self.haystack_max = max(len(i[1]) for i in self.files)
 
         self.lev = LevensteinSearchCL(conf.w2v,

@@ -57,7 +57,7 @@ ap.add_argument('--cve', action='append', default=[], help='CVE id to check. Can
 ap.add_argument('--cwe', action='append', default=[], help='Check all CVEs with this CWE id. Can be repeated.')
 ap.add_argument('--w2v-show', action='store_true', help='show distances to some word2vec tokens')
 ap.add_argument('--w2v-list', action='store_true', help='list available word2vec files')
-ap.add_argument('--w2v', default='w2v-cbow-v128-w5', help='word2vec files name to use, see --w2v-list')
+ap.add_argument('--w2v', default='w2v-cbow-v128-w5', help='word2vec file name to use, see --w2v-list')
 ap.add_argument('--cve-list', action='store_true', help='show list of available CVEs')
 ap.add_argument('--cwe-list', action='store_true', help='show list of available CWEs')
 ap.add_argument('--report-cve-info', action='store_true', help='show CVE description for matches')
@@ -69,6 +69,8 @@ ap.add_argument('--ignore', action='append', default=[],
                 help='CVE id, CWE id or diff id to ignore. See --cve-list, --cwe-list, --report-diff-id')
 ap.add_argument('--ignore-file', help='file with --ignore args separated by new line')
 ap.add_argument('--split-diffs', action='store_true', help='treat each hunk of file change as separate file diff')
+ap.add_argument('--max-file-len', type=int, default=2**14,
+                help='set file length in tokens before it gets split into several pseudofiles. Use it to fix out of memory')
 
 ap.add_argument('--min-hunk-tokens', default=30, type=int,
                 help='minimal token count for change to matter')
@@ -106,7 +108,7 @@ if arg.w2v_show:
     w2v_show(w2v)
     exit()
 
-conf = cvm.MatcherConfig(w2v, arg.max_score, arg.levenstein_ins_cost, arg.levenstein_del_cost)
+conf = cvm.MatcherConfig(w2v, arg.max_file_len, arg.max_score, arg.levenstein_ins_cost, arg.levenstein_del_cost)
 
 cve_ids = []
 cve_ids += arg.cve
@@ -161,7 +163,7 @@ with cvm.Database(arg.db) as db:
     with cvm.Matcher(arg.files, cves, conf) as m:
         print(len(arg.files), 'files, max tokens in file: ', m.haystack_max)
         print('OpenCL search running on', ', '.join(i.name for i in m.lev.ctx.devices))
-        for fname, ftokens in m.files:
+        for fname, ftokens, flines in m.files:
             print('Processing', fname, 'tokens:', len(ftokens))
             for match in m.match(ftokens):
                 for cve_rep in db.cve_report(match.cve.change_id):
@@ -174,12 +176,10 @@ with cvm.Database(arg.db) as db:
                         for cwe in cve_rep.cwe:
                             print(cwe.cwe_id, '-', cwe.cwe_name)
                     if arg.report_diff_full:
-                        print('diff:')
+                        print('Diff:')
                         print(cve_rep.diff)
-                    with open(fname, 'r') as f:
-                        tokens = cvm.tokenize(f.read(), get_line=True)
-                        for h in match.hunks:
-                            print(f'{fname}:{tokens[h.start_token_ind]}:0   ', '%0.6f' % h.dist_b, '- %0.6f' % h.dist_a)
-                            if arg.report_diff:
-                                print(h.hunk.src)
+                    for h in match.hunks:
+                        print(f'{fname}:{flines[h.start_token_ind]}:0   ', '%0.6f' % h.dist_b, '- %0.6f' % h.dist_a)
+                        if arg.report_diff:
+                            print(h.hunk.src)
                     print('')
