@@ -9,19 +9,19 @@ import argparse
 def db_diff_to_git_diff(diff_str):
     return f'diff --git a/a.cpp b/a.cpp\nindex 0000..0000 000000\n' + diff_str
 
-def get_cves(db, min_hunk_tokens):
+def get_cves(db, lang, tokenizer, min_hunk_tokens):
     res = []
-    for file_change_id, cve_id, cwe_id, diff_str in db.get_cves():
+    for file_change_id, cve_id, cwe_id, diff_str in db.get_cves(lang):
         diff = db_diff_to_git_diff(diff_str)
-        if cve := cvm.CVEDesc.from_patch(file_change_id, cve_id, cwe_id, diff, min_hunk_tokens):
+        if cve := cvm.CVEDesc.from_patch(file_change_id, cve_id, cwe_id, diff, tokenizer, min_hunk_tokens):
             res.append(cve)
     return res
 
-def get_cve(db, cve_id, min_hunk_tokens):
+def get_cve(db, cve_id, tokenizer, min_hunk_tokens):
     res = []
     for file_change_id, cve_id, cwe_id, diff_str in db.get_cve(cve_id):
         diff = db_diff_to_git_diff(diff_str)
-        if cve := cvm.CVEDesc.from_patch(file_change_id, cve_id, cwe_id, diff, min_hunk_tokens):
+        if cve := cvm.CVEDesc.from_patch(file_change_id, cve_id, cwe_id, diff, tokenizer, min_hunk_tokens):
             res.append(cve)
     return res
 
@@ -50,14 +50,20 @@ ap = argparse.ArgumentParser(
     description='''Match known CVE fixes to your code.
                    The result should be interpreted as "structure of this code loosely reminds the code that lead to CVE-123"''')
 
-ap.add_argument('--db',
-                help='Path to database',
-                default=None)
+ap.add_argument('--lang',
+    choices=[
+        'C', 'C++', 'C#', 'Java', 'Python', 'PHP', 'JavaScript',
+        'Batchfile', 'CoffeeScript', 'Erlang', 'Go', 'HTML',
+        'Haskell', 'Lua', 'Matlab', 'Objective-C', 'Perl',
+        'PowerShell',  'R', 'Ruby', 'Rust', 'SQL', 'Scala',
+        'Shell', 'Swift', 'TypeScript'],
+    required=True,
+    help='programming language, case-sensitive')
 ap.add_argument('--cve', action='append', default=[], help='CVE id to check. Can be repeated.')
 ap.add_argument('--cwe', action='append', default=[], help='Check all CVEs with this CWE id. Can be repeated.')
 ap.add_argument('--w2v-show', action='store_true', help='show distances to some word2vec tokens')
 ap.add_argument('--w2v-list', action='store_true', help='list available word2vec files')
-ap.add_argument('--w2v', default='w2v-cbow-v128-w5', help='word2vec file name to use, see --w2v-list')
+ap.add_argument('--w2v', help='word2vec file name to use, see --w2v-list')
 ap.add_argument('--cve-list', action='store_true', help='show list of available CVEs')
 ap.add_argument('--cwe-list', action='store_true', help='show list of available CWEs')
 ap.add_argument('--report-cve-info', action='store_true', help='show CVE description for matches')
@@ -78,8 +84,8 @@ ap.add_argument('--max-score', default=0.3, type=float,
                 help='Max score value that is considered low enough to show as a result. Reasonable values are from 0.05 (~exact copy of CVE) to 0.3 (loosely reminds of some CVE)')
 ap.add_argument('--levenstein-ins-cost', default=2, type=float, help='insertion cost in levenstein distance computation')
 ap.add_argument('--levenstein-del-cost', default=2, type=float, help='deletion cost in levenstein distance computation')
+ap.add_argument('--db', help='Path to database', default=None)
 ap.add_argument('files', nargs='*', help='Source files to check')
-
 
 arg = ap.parse_args()
 
@@ -91,15 +97,19 @@ if arg.w2v_list:
     print('Available word2vec models w2v-(training algorithm)-v(vector-size)-w(window size):')
 
     for i in datadir.iterdir():
-        if i.startswith('w2v-') and not i.endswith('.npy'):
-            print(i)
+        fname = i.parts[-1]
+        if fname.startswith('w2v-') and not fname.endswith('.npy'):
+            print(fname)
     print()
     exit()
+
+if arg.w2v is None:
+    arg.w2v = f'w2v-{arg.lang.lower()}-cbow-v128-w5'
 
 w2v_fname = datadir / arg.w2v
 if not w2v_fname.is_file():
     print('word2vec model', w2v_fname, 'not found', file=sys.stderr)
-    print('Train it with something like ./w2v.py --vector-size 128 --window-size 5', file=sys.stderr)
+    print('Train it with something like ./w2v.py --lang C++ --vector-size 128 --window-size 5', file=sys.stderr)
     exit(1)
 
 w2v = KeyedVectors.load(str(w2v_fname))
@@ -108,7 +118,12 @@ if arg.w2v_show:
     w2v_show(w2v)
     exit()
 
-conf = cvm.MatcherConfig(w2v, arg.max_file_len, arg.max_score, arg.levenstein_ins_cost, arg.levenstein_del_cost)
+conf = cvm.MatcherConfig(w2v,
+                         arg.max_file_len,
+                         arg.max_score,
+                         arg.levenstein_ins_cost,
+                         arg.levenstein_del_cost,
+                         cvm.get_tokenizer(arg.lang))
 
 cve_ids = []
 cve_ids += arg.cve
@@ -131,10 +146,10 @@ with cvm.Database(arg.db) as db:
             cve_ids += db.get_cves_by_cwe(cwe_id)
 
     if cve_ids:
-        cves = [cve for cve_id in cve_ids for cve in get_cve(db, cve_id, arg.min_hunk_tokens)]
+        cves = [cve for cve_id in cve_ids for cve in get_cve(db, cve_id, conf.tokenizer, arg.min_hunk_tokens)]
     else:
-        print('No CVEs specified. Default to all C/C++ CVE records')
-        cves = get_cves(db, arg.min_hunk_tokens)
+        print('No CVEs specified. Default to all CVE records for', arg.lang)
+        cves = get_cves(db, arg.lang, conf.tokenizer, arg.min_hunk_tokens)
 
     if arg.ignore_file:
         with open(arg.ignore_file, 'r') as f:

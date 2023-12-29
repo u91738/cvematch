@@ -6,7 +6,7 @@ import more_itertools as mit
 import unidiff
 import numpy as np
 from gensim.models.keyedvectors import KeyedVectors
-from .tokenize import tokenize
+from .tokenize import Tokenizer
 from .measure import LevensteinSearchCL
 
 
@@ -29,6 +29,7 @@ class MatcherConfig:
     max_score:float
     levenstein_ins_cost:float
     levenstein_del_cost:float
+    tokenizer:Tokenizer
 
 
 class CVEDesc:
@@ -51,7 +52,7 @@ class CVEDesc:
                 for b, a in it.zip_longest(self.before, self.after)
                 if b is not None]
 
-    def from_patch(change_id:str, cve_id:str, cwe_id:str, diff:str, min_hunk_tokens):
+    def from_patch(change_id:str, cve_id:str, cwe_id:str, diff:str, tokenizer, min_hunk_tokens:int):
         before = []
         after = []
         for patch in unidiff.PatchSet.from_string(diff):
@@ -59,7 +60,7 @@ class CVEDesc:
             for hunk in patch:
                 hunk_before, hunk_after, hunk_src = [], [], []
                 for line in hunk:
-                    tokens = tokenize(line.value)
+                    tokens = tokenizer.tokenize(line.value)
                     if line.is_context:
                         hunk_before += tokens
                         hunk_after += tokens
@@ -123,7 +124,7 @@ class Matcher:
         for fname in files:
 
             with open(fname, 'r', errors='ignore') as f:
-                lines, tokens = mit.unzip(tokenize(f.read()))
+                lines, tokens = mit.unzip(conf.tokenizer.tokenize(f.read()))
                 lines, tokens = list(lines), list(tokens)
                 while len(tokens) > conf.max_file_len:
                     self.files.append((fname, lines[:conf.max_file_len], tokens[:conf.max_file_len]))

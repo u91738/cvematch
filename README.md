@@ -2,7 +2,9 @@
 Fuzzy search for code similar to code that caused known vulnerabilities.
 Reports should be interpreted as "structure of this code loosely reminds the code that lead to CVE-123".
 Its purpose is to suggest candidates for manual code audit, somewhat like you would use a noisy static analyzer, not an SCA tool.
-C and C++ only, at least for now.
+
+Supported languages are C, C++, C#, Java, Python, PHP, JavaScript.
+Should work with any other languages in dataset using a generic default tokenizer, not very useful for languages with less CVEs in dataset.
 
 Uses OpenCL for computation-intensive parts, you may want a machine with a mid-range GPU.
 
@@ -22,12 +24,13 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
-  --db DB               Path to database
+  --lang {C,C++,C#,Java,Python,PHP,JavaScript,Batchfile,CoffeeScript,Erlang,Go,HTML,Haskell,Lua,Matlab,Objective-C,Perl,PowerShell,R,Ruby,Rust,SQL,Scala,Shell,Swift,TypeScript}
+                        programming language, case-sensitive
   --cve CVE             CVE id to check. Can be repeated.
   --cwe CWE             Check all CVEs with this CWE id. Can be repeated.
   --w2v-show            show distances to some word2vec tokens
   --w2v-list            list available word2vec files
-  --w2v W2V             word2vec files name to use, see --w2v-list
+  --w2v W2V             word2vec file name to use, see --w2v-list
   --cve-list            show list of available CVEs
   --cwe-list            show list of available CWEs
   --report-cve-info     show CVE description for matches
@@ -46,9 +49,9 @@ options:
   --min-hunk-tokens MIN_HUNK_TOKENS
                         minimal token count for change to matter
   --max-score MAX_SCORE
-                        Max score value that is considered low enough to show as a result. Reasonable
-                        values are from 0.05 (~exact copy of CVE) to 0.3 (loosely reminds of some
-                        CVE)
+                        Max score value that is considered low enough to show as a result.
+                        Reasonable values are from 0.05 (~exact copy of CVE) to 0.3 (loosely reminds
+                        of some CVE)
 ```
 
 ## Output example
@@ -60,7 +63,7 @@ Where 0 is perfect match and 1 - completely different.
 0.000000 - 0.496774 is score for a specific hunk of a bigger patch in this specific place.
 
 ```
-$ ./cvematch.py --report-cve-info --report-cwe --report-diff --cve='CVE-1999-0199' examples/88393274694273.c
+$ ./cvematch.py --lang C++ --report-cve-info --report-cwe --report-diff --cve='CVE-1999-0199' examples/88393274694273.c
 Will check:
 CVE-1999-0199
 4 file diffs in cves

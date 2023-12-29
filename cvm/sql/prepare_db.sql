@@ -1,4 +1,4 @@
--- get CVEFixes 1.0.7 from 20 Gb to 2.3, add indices
+-- get CVEFixes 1.0.7 from 20 Gb to 2.1, add indices
 DROP TABLE commits;
 DROP TABLE method_change;
 DROP TABLE repository;
@@ -39,35 +39,59 @@ ALTER TABLE cve DROP COLUMN ac_insuf_info;
 ALTER TABLE cve DROP COLUMN reference_json;
 ALTER TABLE cve DROP COLUMN problemtype_json;
 
+-- Dataset is quite dirty
+DELETE
+FROM file_change
+WHERE programming_language IN ('unknown', 'TeX', 'Markdown', 'None', 'Jupyter Notebook', 'CSS');
+
+-- C and C++ data has plenty of CSS and other off-topic stuff
+DELETE
+FROM file_change
+WHERE (programming_language = 'C' OR programming_language = 'C++')
+       AND (
+            filename NOT LIKE '%.c'
+            AND filename NOT LIKE '%.cpp'
+            AND filename NOT LIKE '%.h'
+            AND filename NOT LIKE '%.cc'
+            AND filename NOT LIKE '%.inc'
+            AND filename NOT LIKE '%.hpp'
+            AND filename NOT LIKE '%.cxx'
+            AND filename NOT LIKE '%.in'
+            AND filename NOT LIKE '%.xs'
+            AND filename NOT LIKE '%.hh'
+            AND filename NOT LIKE '%.ci'
+            AND filename NOT LIKE '%.l'
+            AND filename NOT LIKE '%.c++'
+            AND filename NOT LIKE '%.pro'
+            AND filename NOT LIKE '%.def'
+            AND filename NOT LIKE '%.xst'
+            AND filename NOT LIKE '%.edl'
+            AND filename NOT LIKE '%.re'
+            AND filename NOT LIKE '%.y'
+        );
+
+DELETE
+FROM file_change
+WHERE (programming_language = 'Java'
+       AND (filename NOT LIKE '%.java' AND filename NOT LIKE '%.jsp'));
+
+DELETE
+FROM file_change
+WHERE (programming_language = 'C#' AND filename NOT LIKE '%.cs');
+
+DELETE
+FROM file_change
+WHERE (programming_language = 'Go' AND filename NOT LIKE '%.go');
+
+DELETE
+FROM file_change
+WHERE (programming_language = 'Python' AND filename NOT LIKE '%.py');
+
+DELETE
+FROM file_change
+WHERE code_before = 'None';
+
 VACUUM;
 
 CREATE INDEX IF NOT EXISTS fixes_cve_id ON fixes (cve_id);
 CREATE INDEX IF NOT EXISTS file_change_programming_language ON file_change (programming_language);
-
--- C and C++ data has plenty of CSS and other off-topic stuff
-CREATE VIEW IF NOT EXISTS file_change_cpp(file_change_id, hash, diff, code_after, code_before)
-AS
-SELECT file_change_id, hash, diff, code_after, code_before
-FROM file_change
-WHERE (programming_language = 'C' OR programming_language = 'C++')
-AND (
-    filename LIKE '%.c'
-    OR filename LIKE '%.cpp'
-    OR filename LIKE '%.h'
-    OR filename LIKE '%.cc'
-    OR filename LIKE '%.inc'
-    OR filename LIKE '%.hpp'
-    OR filename LIKE '%.cxx'
-    OR filename LIKE '%.in'
-    OR filename LIKE '%.xs'
-    OR filename LIKE '%.hh'
-    OR filename LIKE '%.ci'
-    OR filename LIKE '%.l'
-    OR filename LIKE '%.c++'
-    OR filename LIKE '%.pro'
-    OR filename LIKE '%.def'
-    OR filename LIKE '%.xst'
-    OR filename LIKE '%.edl'
-    OR filename LIKE '%.re'
-    OR filename LIKE '%.y'
-);

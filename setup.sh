@@ -35,10 +35,6 @@ if [ "$DB_SIZE" -gt 4000000000 ] ; then
     sqlite3 "$DB" < cvm/sql/prepare_db.sql
 fi
 
-if [ ! -e data/w2v-cbow-v128-w5 ] ; then
-    echo 'No word2vec files found. Generate some'
-    echo 'Vector size 128, window size 5'
-    time ./w2v.py --vector-size 128 --window-size 5
-fi
+./w2v-default.sh
 
 echo 'Done. You can run ./cleanup.sh to free some space'

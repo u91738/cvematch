@@ -54,8 +54,11 @@ class Database:
     def get_cve(self, cve_id):
         return self.__select(self.cve_get_changes_sql, cve_id)
 
-    def get_cves(self):
-        return self.__select(self.cve_all_get_changes_sql)
+    def get_cves(self, lang):
+        r = self.__select(self.cve_all_get_changes_sql, lang)
+        if lang == 'C++':
+            r += self.__select(self.cve_all_get_changes_sql, 'C')
+        return r
 
     def list_cves(self):
         return self.__select(self.cve_list_sql)
@@ -68,5 +71,8 @@ class Database:
             cwes = self.__select(self.cve_report_cwe_sql, cve_id)
             yield CveReport(cve_id, description, diff, [Cwe(*i) for i in cwes])
 
-    def all_code(self):
-        return self.__select(self.all_code_sql)
+    def all_code(self, lang):
+        r = self.__select(self.all_code_sql, lang, lang)
+        if lang == 'C++':
+            r += self.__select(self.all_code_sql, 'C', 'C')
+        return r
